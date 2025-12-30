@@ -1,41 +1,30 @@
 // --- SAFEGUARDS & UTILS ---
 const $ = (id) => document.getElementById(id);
 
-// Failsafe: Paksa hilangkan loading screen setelah 3 detik jika macet
-setTimeout(() => {
-    const loader = $('loadingOverlay');
-    if (loader && !loader.classList.contains('hidden')) {
-        console.warn("Loading terlalu lama, memaksa masuk...");
-        loader.classList.add('hidden');
-    }
-}, 3000);
-
 // --- CONFIGURATION ---
-// Gunakan try-catch block global untuk inisialisasi agar script tidak mati total jika ada error
+const firebaseConfig = {
+  apiKey: "AIzaSyBvd0MSxwgvYA9XJTOy9_kDCMsBhD6Cuus",
+  authDomain: "mathmaster-fnzyz.firebaseapp.com",
+  projectId: "mathmaster-fnzyz",
+  storageBucket: "mathmaster-fnzyz.firebasestorage.app",
+  messagingSenderId: "669657651884",
+  appId: "1:669657651884:web:32315bf8ef9bbbfdac9d09"
+};
+
+// Initialize Firebase safely
 let app, auth, db;
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 try {
-    const firebaseConfig = {
-      apiKey: "AIzaSyBvd0MSxwgvYA9XJTOy9_kDCMsBhD6Cuus",
-      authDomain: "mathmaster-fnzyz.firebaseapp.com",
-      projectId: "mathmaster-fnzyz",
-      storageBucket: "mathmaster-fnzyz.firebasestorage.app",
-      messagingSenderId: "669657651884",
-      appId: "1:669657651884:web:32315bf8ef9bbbfdac9d09"
-    };
-    
-    // Cek apakah Firebase SDK termuat
     if (typeof firebase !== 'undefined') {
         app = firebase.initializeApp(firebaseConfig);
         auth = firebase.auth();
         db = firebase.firestore(app);
     } else {
-        console.error("Firebase SDK tidak ditemukan!");
-        alert("Gagal memuat sistem game. Cek koneksi internet Anda.");
+        console.error("Firebase SDK missing");
     }
-} catch (error) {
-    console.error("Error Konfigurasi:", error);
+} catch (e) {
+    console.error("Firebase Init Error:", e);
 }
 
 // --- STATE MANAGEMENT ---
@@ -67,28 +56,41 @@ const showScreen = (screenId) => {
     if(target) target.classList.remove('hidden-screen');
 };
 
-// --- AUDIO LOGIC (SAFE) ---
+// --- AUDIO LOGIC (SAFE MODE) ---
 function startAudio() {
-    const bgAudio = $('bg-music');
-    // Cek apakah elemen audio ada sebelum mengaksesnya
-    if (bgAudio && !audioStarted) {
-        bgAudio.volume = 0.5;
+    // Ambil elemen audio secara dinamis (Lazy fetch) untuk menghindari error null di awal
+    const bgAudio = document.getElementById('bg-music');
+    
+    if (!bgAudio) {
+        console.warn("Element audio tidak ditemukan di HTML");
+        return;
+    }
+
+    if (!audioStarted) {
+        bgAudio.volume = 0.5; // Default volume
         
-        // Play audio dengan catch error agar tidak memblokir program
+        // Load saved volume
+        const savedVol = localStorage.getItem('mm_volume');
+        if(savedVol !== null) {
+            bgAudio.volume = parseFloat(savedVol);
+            const slider = $('volume-slider');
+            if(slider) slider.value = savedVol;
+            updateVolumeUI(savedVol);
+        }
+
+        // COBA PUTAR, TAPI JANGAN CRASH JIKA GAGAL
         const playPromise = bgAudio.play();
-        
+
         if (playPromise !== undefined) {
             playPromise.then(() => {
+                // Audio berhasil diputar
                 audioStarted = true;
-                // Load saved volume
-                const savedVol = localStorage.getItem('mm_volume');
-                if(savedVol !== null) {
-                    updateVolume(savedVol);
-                    const slider = $('volume-slider');
-                    if(slider) slider.value = savedVol;
-                }
+                console.log("Audio playing");
             }).catch(error => {
-                console.log("Audio autoplay dicegah browser (normal sampai user interaksi):", error);
+                // Audio diblokir browser (Autoplay Policy). 
+                // Ini NORMAL jika user belum klik apapun. Jangan biarkan ini menghentikan script.
+                console.log("Audio autoplay dicegah browser. Menunggu interaksi user.");
+                audioStarted = false; 
             });
         }
     }
@@ -96,44 +98,84 @@ function startAudio() {
 
 function toggleSettings() {
     const modal = $('settings-overlay');
-    if (modal) {
-        modal.classList.toggle('hidden-screen');
-    }
+    if (modal) modal.classList.toggle('hidden-screen');
 }
 
 function updateVolume(val) {
-    const bgAudio = $('bg-music');
+    const bgAudio = document.getElementById('bg-music');
     if (bgAudio) {
         bgAudio.volume = val;
+        // Jika audio belum jalan karena autoplay block, paksa jalan saat user geser slider
+        if (!audioStarted) {
+            bgAudio.play().then(() => audioStarted = true).catch(() => {});
+        }
     }
+    updateVolumeUI(val);
+    localStorage.setItem('mm_volume', val);
+}
+
+function updateVolumeUI(val) {
     const volVal = $('volume-value');
     if(volVal) volVal.innerText = Math.round(val * 100) + '%';
-    localStorage.setItem('mm_volume', val);
 }
 
 // --- AUTHENTICATION LOGIC ---
 
 async function initAuth() {
-    if (!auth) return; // Stop jika firebase error
+    if (!auth) return stopLoading();
 
     try {
-        // Cek token bawaan lingkungan pengembangan
+        // Cek token bawaan (untuk environment khusus)
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
             await auth.signInWithCustomToken(__initial_auth_token);
         } else {
-            // Hanya sign-in jika belum ada user
+            // Hanya login anonim jika belum ada user
             if (!auth.currentUser) {
                 await auth.signInAnonymously();
             }
         }
     } catch (error) {
-        console.warn("Auth issue (Offline Mode?):", error);
+        console.warn("Auth warning:", error);
     } finally {
-        // SELALU hilangkan loading screen
-        const loader = $('loadingOverlay');
-        if (loader) loader.classList.add('hidden');
+        // PENTING: Apa pun yang terjadi, matikan loading screen!
+        stopLoading();
     }
 }
+
+// Helper untuk mematikan loading
+function stopLoading() {
+    const loader = $('loadingOverlay');
+    if (loader) loader.classList.add('hidden');
+    
+    // Failsafe: Jika loader masih ada setelah 500ms, paksa hilang
+    setTimeout(() => {
+        if(loader && !loader.classList.contains('hidden')) loader.classList.add('hidden');
+    }, 500);
+}
+
+// Event Listener auth state
+if (auth) {
+    auth.onAuthStateChanged((user) => {
+        if (user) {
+            // User login/terdeteksi
+            // Cek apakah data user ada di DB untuk menentukan role
+            checkUserProfile(user);
+        } else {
+            // User logout
+            showScreen('screen-auth');
+        }
+        stopLoading(); // Pastikan loading hilang setiap status berubah
+    });
+}
+
+async function checkUserProfile(firebaseUser) {
+    // Jika anonymous auth tanpa profil DB (Guest fresh)
+    if (firebaseUser.isAnonymous && !currentUser) {
+         // Kita anggap sementara guest sampai user login beneran
+         // Tapi karena struktur kode sebelumnya manual, kita biarkan logic handleLogin menangani
+    }
+}
+
 
 async function handleRegister() {
     const u = $('auth-username').value.trim();
@@ -168,7 +210,7 @@ async function handleRegister() {
     } catch (e) {
         showAuthError(e.message);
     } finally {
-        $('loadingOverlay').classList.add('hidden');
+        stopLoading();
     }
 }
 
@@ -181,6 +223,7 @@ async function handleLogin() {
     $('loadingOverlay').classList.remove('hidden');
 
     try {
+        // Cek DB manual (simulasi login via Firestore query)
         const userRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('users');
         const snapshot = await userRef.where('username', '==', u).where('password', '==', p).get();
 
@@ -190,12 +233,13 @@ async function handleLogin() {
 
         const doc = snapshot.docs[0];
         currentUser = { id: doc.id, ...doc.data(), isGuest: false };
+        
         loginSuccess();
 
     } catch (e) {
         showAuthError(e.message);
     } finally {
-        $('loadingOverlay').classList.add('hidden');
+        stopLoading();
     }
 }
 
@@ -213,7 +257,9 @@ function startGuestMode() {
 }
 
 function loginSuccess() {
-    startAudio(); // Coba nyalakan audio
+    // Mencoba memutar audio. 
+    // Karena fungsi ini dipanggil setelah klik tombol (Login/Guest), kemungkinan besar browser mengizinkan audio.
+    startAudio(); 
 
     $('display-username').innerText = currentUser.username;
     $('user-role-badge').innerText = currentUser.role === 'admin' ? 'Administrator' : (currentUser.isGuest ? 'Mode Tamu' : 'Pemain Terdaftar');
@@ -236,6 +282,10 @@ function handleLogout() {
     $('auth-password').value = '';
     $('auth-message').innerText = '';
     showScreen('screen-auth');
+    // Opsional: Matikan musik saat logout
+    // const bgAudio = document.getElementById('bg-music');
+    // if(bgAudio) bgAudio.pause();
+    // audioStarted = false;
 }
 
 function showAuthError(msg) {
@@ -250,6 +300,8 @@ function showAuthError(msg) {
 
 function showGameSetup() {
     showScreen('screen-setup');
+    // Pastikan audio jalan lagi (berjaga-jaga jika autoplay block saat login)
+    startAudio();
 }
 
 function selectDifficulty(diff, btn) {
@@ -285,6 +337,9 @@ function startGame() {
         $('game-timer').innerText = gameData.timer;
         if (gameData.timer <= 0) endGame();
     }, 1000);
+    
+    // Satu lagi upaya play audio, karena tombol "Mulai" adalah interaksi user yang kuat
+    startAudio();
 }
 
 function generateQuestion() {
@@ -381,17 +436,18 @@ function endGame() {
     $('final-score').innerText = gameData.score;
     $('final-correct').innerText = gameData.correct;
     $('final-wrong').innerText = gameData.wrong;
-    $('achievement-unlocked').classList.add('hidden');
+    const achUnlocked = $('achievement-unlocked');
+    if(achUnlocked) achUnlocked.classList.add('hidden');
 
     showScreen('screen-result');
 
-    if (!currentUser.isGuest) {
+    if (currentUser && !currentUser.isGuest) {
         saveGameData();
     }
 }
 
 async function saveGameData() {
-    if(!db) return; // Guard clause jika db error
+    if(!db) return; 
 
     const scoreRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores');
     const userRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('users').doc(currentUser.id);
@@ -435,8 +491,10 @@ async function saveGameData() {
 
             if (newlyUnlocked.length > 0) {
                 const ach = newlyUnlocked[0]; 
-                $('achievement-text').innerText = ach.title;
-                $('achievement-unlocked').classList.remove('hidden');
+                const achText = $('achievement-text');
+                const achBox = $('achievement-unlocked');
+                if(achText) achText.innerText = ach.title;
+                if(achBox) achBox.classList.remove('hidden');
             }
         }
     } catch(e) {
@@ -450,7 +508,8 @@ async function loadLeaderboard() {
     const list = $('leaderboard-list');
     
     list.innerHTML = '';
-    $('lb-loading').classList.remove('hidden');
+    const loader = $('lb-loading');
+    if(loader) loader.classList.remove('hidden');
 
     try {
         let query = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores');
@@ -497,7 +556,7 @@ async function loadLeaderboard() {
         console.error(e);
         list.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-red-400">Gagal memuat</td></tr>';
     } finally {
-        $('lb-loading').classList.add('hidden');
+        if(loader) loader.classList.add('hidden');
     }
 }
 
@@ -587,7 +646,7 @@ async function deleteUser(uid) {
     }
 }
 
-// Gunakan event listener untuk memastikan DOM siap
+// Initial Start with DOM Ready check
 document.addEventListener('DOMContentLoaded', () => {
     initAuth();
 });
