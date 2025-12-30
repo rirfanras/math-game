@@ -1,638 +1,95 @@
-// --- SAFEGUARDS & UTILS ---
-const $ = (id) => document.getElementById(id);
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@300;400;500;600;700&display=swap');
 
-// --- CONFIGURATION ---
-const firebaseConfig = {
-  apiKey: "AIzaSyBvd0MSxwgvYA9XJTOy9_kDCMsBhD6Cuus",
-  authDomain: "mathmaster-fnzyz.firebaseapp.com",
-  projectId: "mathmaster-fnzyz",
-  storageBucket: "mathmaster-fnzyz.firebasestorage.app",
-  messagingSenderId: "669657651884",
-  appId: "1:669657651884:web:32315bf8ef9bbbfdac9d09"
-};
-
-// Initialize Firebase safely
-let app, auth, db;
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-try {
-    if (typeof firebase !== 'undefined') {
-        app = firebase.initializeApp(firebaseConfig);
-        auth = firebase.auth();
-        db = firebase.firestore(app);
-    } else {
-        console.error("Firebase SDK missing");
-    }
-} catch (e) {
-    console.error("Firebase Init Error:", e);
+body {
+    font-family: 'Fredoka', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    overflow-x: hidden;
 }
 
-// --- STATE MANAGEMENT ---
-let currentUser = null; 
-let audioStarted = false;
-let gameData = {
-    active: false,
-    timer: 60,
-    score: 0,
-    correct: 0,
-    wrong: 0,
-    currentQ: null,
-    timerInterval: null,
-    type: 'add',
-    difficulty: 'easy'
-};
-
-const achievementsList = [
-    { id: 'first_blood', title: 'Langkah Pertama', desc: 'Mainkan game pertama kamu', req: (stats) => stats.gamesPlayed >= 1 },
-    { id: 'math_wiz', title: 'Ahli Matematika', desc: 'Dapatkan skor > 50', req: (stats, score) => score > 50 },
-    { id: 'century', title: 'Centurion', desc: 'Dapatkan skor > 100', req: (stats, score) => score > 100 },
-    { id: 'veteran', title: 'Veteran', desc: 'Mainkan 10 game', req: (stats) => stats.gamesPlayed >= 10 }
-];
-
-// --- SCREEN NAVIGATION ---
-const showScreen = (screenId) => {
-    // PROTEKSI: Jika masuk ke menu utama atau setup, matikan musik
-    if (screenId === 'screen-menu' || screenId === 'screen-setup' || screenId === 'screen-auth') {
-        stopAudio();
-    }
-
-    document.querySelectorAll('[id^="screen-"]').forEach(el => el.classList.add('hidden-screen'));
-    const target = $(screenId);
-    if(target) target.classList.remove('hidden-screen');
-};
-
-// --- AUDIO LOGIC ---
-function startAudio() {
-    const bgAudio = document.getElementById('bg-music');
-    if (!bgAudio) return;
-
-    // Load saved volume but default to 50%
-    const savedVol = localStorage.getItem('mm_volume');
-    if(savedVol !== null) {
-        bgAudio.volume = parseFloat(savedVol);
-        const slider = $('volume-slider');
-        if(slider) slider.value = savedVol;
-        updateVolumeUI(savedVol);
-    } else {
-        bgAudio.volume = 0.5;
-    }
-
-    // Hanya putar jika belum mulai
-    if (!audioStarted) {
-        const playPromise = bgAudio.play();
-        if (playPromise !== undefined) {
-            playPromise.then(() => {
-                audioStarted = true;
-            }).catch(error => {
-                console.log("Audio autoplay dicegah browser (normal di menu):", error);
-            });
-        }
-    }
+.glass-panel {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
 }
 
-function stopAudio() {
-    const bgAudio = document.getElementById('bg-music');
-    if (bgAudio) {
-        bgAudio.pause();
-        bgAudio.currentTime = 0; // Reset lagu ke awal
-        audioStarted = false;
-    }
+.btn-game {
+    transition: all 0.2s;
+}
+.btn-game:active {
+    transform: scale(0.95);
 }
 
-function toggleSettings() {
-    const modal = $('settings-overlay');
-    if (modal) modal.classList.toggle('hidden-screen');
+.animate-pop {
+    animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-function updateVolume(val) {
-    const bgAudio = document.getElementById('bg-music');
-    if (bgAudio) {
-        bgAudio.volume = val;
-        // Tidak ada logika play() disini agar aman
-    }
-    updateVolumeUI(val);
-    localStorage.setItem('mm_volume', val);
+@keyframes pop {
+    0% { transform: scale(0.5); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
 }
 
-function updateVolumeUI(val) {
-    const volVal = $('volume-value');
-    if(volVal) volVal.innerText = Math.round(val * 100) + '%';
+.hidden-screen {
+    display: none !important;
 }
 
-// --- AUTHENTICATION LOGIC ---
-
-async function initAuth() {
-    // Pastikan audio mati saat start/refresh
-    stopAudio();
-
-    if (!auth) return stopLoading();
-
-    try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await auth.signInWithCustomToken(__initial_auth_token);
-        } else {
-            if (!auth.currentUser) {
-                await auth.signInAnonymously();
-            }
-        }
-    } catch (error) {
-        console.warn("Auth warning:", error);
-    } finally {
-        stopLoading();
-    }
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #f1f1f1; 
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+    background: #888; 
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #555; 
 }
 
-function stopLoading() {
-    const loader = $('loadingOverlay');
-    if (loader) loader.classList.add('hidden');
-    setTimeout(() => {
-        if(loader && !loader.classList.contains('hidden')) loader.classList.add('hidden');
-    }, 500);
+/* Range Input Styling */
+input[type=range] {
+    -webkit-appearance: none;
+    background: transparent;
+}
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    height: 20px;
+    width: 20px;
+    border-radius: 50%;
+    background: #4f46e5;
+    cursor: pointer;
+    margin-top: -6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+input[type=range]::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 8px;
+    cursor: pointer;
+    background: #e5e7eb;
+    border-radius: 4px;
 }
 
-if (auth) {
-    auth.onAuthStateChanged((user) => {
-        if (!user) {
-            showScreen('screen-auth');
-        }
-        stopLoading();
-    });
+/* Modal specific styles */
+.modal-input {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    font-family: inherit;
 }
-
-async function handleRegister() {
-    const u = $('auth-username').value.trim();
-    const p = $('auth-password').value.trim();
-    
-    if(!u || !p) return showAuthError("Username dan password harus diisi!");
-    if(u.length < 3) return showAuthError("Username minimal 3 karakter.");
-
-    $('loadingOverlay').classList.remove('hidden');
-
-    try {
-        const userRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('users');
-        const snapshot = await userRef.where('username', '==', u).get();
-
-        if (!snapshot.empty) {
-            throw new Error("Username sudah dipakai.");
-        }
-
-        const newUser = {
-            username: u,
-            password: p, 
-            role: u.toLowerCase() === 'admin' ? 'admin' : 'user',
-            createdAt: new Date().toISOString(),
-            gamesPlayed: 0,
-            highScore: 0,
-            achievements: []
-        };
-
-        await userRef.add(newUser);
-        alert("Akun berhasil dibuat! Silakan login.");
-        $('auth-password').value = '';
-    } catch (e) {
-        showAuthError(e.message);
-    } finally {
-        stopLoading();
-    }
+.modal-input:focus {
+    border-color: #6366f1;
+    outline: none;
 }
-
-async function handleLogin() {
-    const u = $('auth-username').value.trim();
-    const p = $('auth-password').value.trim();
-
-    if(!u || !p) return showAuthError("Isi semua data!");
-
-    $('loadingOverlay').classList.remove('hidden');
-
-    try {
-        const userRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('users');
-        const snapshot = await userRef.where('username', '==', u).where('password', '==', p).get();
-
-        if (snapshot.empty) {
-            throw new Error("Username atau password salah.");
-        }
-
-        const doc = snapshot.docs[0];
-        currentUser = { id: doc.id, ...doc.data(), isGuest: false };
-        
-        loginSuccess();
-
-    } catch (e) {
-        showAuthError(e.message);
-    } finally {
-        stopLoading();
-    }
+.modal-label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #4b5563;
+    margin-bottom: 4px;
 }
-
-function startGuestMode() {
-    currentUser = { 
-        id: 'guest_' + Date.now(), 
-        username: 'Tamu', 
-        role: 'guest', 
-        isGuest: true,
-        gamesPlayed: 0, 
-        highScore: 0, 
-        achievements: [] 
-    };
-    loginSuccess();
-}
-
-function loginSuccess() {
-    // EKSPLISIT: Pastikan audio mati saat baru login
-    stopAudio();
-
-    $('display-username').innerText = currentUser.username;
-    $('user-role-badge').innerText = currentUser.role === 'admin' ? 'Administrator' : (currentUser.isGuest ? 'Mode Tamu' : 'Pemain Terdaftar');
-    
-    const adminBtn = $('btn-admin-panel');
-    if (adminBtn) {
-        if(currentUser.role === 'admin') {
-            adminBtn.classList.remove('hidden-screen');
-        } else {
-            adminBtn.classList.add('hidden-screen');
-        }
-    }
-
-    showScreen('screen-menu');
-}
-
-function handleLogout() {
-    currentUser = null;
-    $('auth-username').value = '';
-    $('auth-password').value = '';
-    $('auth-message').innerText = '';
-    
-    stopAudio(); 
-    showScreen('screen-auth');
-}
-
-function showAuthError(msg) {
-    const msgEl = $('auth-message');
-    if(msgEl) {
-        msgEl.innerText = msg;
-        setTimeout(() => msgEl.innerText = '', 3000);
-    }
-}
-
-// --- GAMEPLAY LOGIC ---
-
-function showGameSetup() {
-    // Pastikan musik mati di layar setup
-    stopAudio();
-    showScreen('screen-setup');
-}
-
-function selectDifficulty(diff, btn) {
-    gameData.difficulty = diff;
-    document.querySelectorAll('.diff-btn').forEach(b => {
-        b.classList.remove('bg-green-100', 'border-green-500', 'text-green-700', 'active-diff');
-        b.classList.add('bg-white', 'border-gray-200', 'text-gray-500');
-    });
-    btn.classList.remove('bg-white', 'border-gray-200', 'text-gray-500');
-    btn.classList.add('bg-green-100', 'border-green-500', 'text-green-700', 'active-diff');
-}
-
-function startGame() {
-    gameData.type = $('game-type').value;
-    
-    const timers = {
-        'easy': 60,
-        'medium': 90,
-        'hard': 120
-    };
-    gameData.timer = timers[gameData.difficulty] || 60;
-
-    gameData.score = 0;
-    gameData.correct = 0;
-    gameData.wrong = 0;
-    gameData.active = true;
-
-    $('game-score').innerText = '0';
-    $('game-timer').innerText = gameData.timer;
-    $('answer-display').innerText = '';
-    $('feedback-msg').innerText = '';
-
-    showScreen('screen-game');
-    generateQuestion();
-    
-    // HANYA PUTAR AUDIO SAAT GAME DIMULAI
-    startAudio();
-    
-    if (gameData.timerInterval) clearInterval(gameData.timerInterval);
-    gameData.timerInterval = setInterval(() => {
-        gameData.timer--;
-        $('game-timer').innerText = gameData.timer;
-        if (gameData.timer <= 0) endGame();
-    }, 1000);
-}
-
-function generateQuestion() {
-    let n1, n2, operator;
-    const diff = gameData.difficulty;
-    const type = gameData.type;
-
-    let max = diff === 'easy' ? 10 : (diff === 'medium' ? 50 : 100);
-    let min = diff === 'hard' ? -50 : 1;
-
-    let ops = [];
-    if(type === 'add') ops = ['+'];
-    else if(type === 'sub') ops = ['-'];
-    else if(type === 'mul') ops = ['*'];
-    else if(type === 'div') ops = ['/'];
-    else if(type === 'addsub') ops = ['+', '-'];
-    else if(type === 'muldiv') ops = ['*', '/'];
-    else ops = ['+', '-', '*', '/'];
-
-    operator = ops[Math.floor(Math.random() * ops.length)];
-
-    if (operator === '/') {
-        n2 = Math.floor(Math.random() * (max/2)) + 2; 
-        const factor = Math.floor(Math.random() * (max/2)) + 1;
-        n1 = n2 * factor; 
-    } else if (operator === '*') {
-        let mulMax = diff === 'easy' ? 9 : (diff === 'medium' ? 12 : 20);
-        n1 = Math.floor(Math.random() * mulMax) + 1;
-        n2 = Math.floor(Math.random() * mulMax) + 1;
-    } else {
-        n1 = Math.floor(Math.random() * (max - min + 1)) + min;
-        n2 = Math.floor(Math.random() * (max - min + 1)) + min;
-        if(operator === '-' && diff !== 'hard' && n2 > n1) {
-            [n1, n2] = [n2, n1];
-        }
-    }
-
-    let ans;
-    switch(operator) {
-        case '+': ans = n1 + n2; break;
-        case '-': ans = n1 - n2; break;
-        case '*': ans = n1 * n2; break;
-        case '/': ans = n1 / n2; break;
-    }
-
-    let displayOp = operator;
-    if (operator === '*') displayOp = '×';
-    if (operator === '/') displayOp = '÷';
-
-    let qText = `${n1} ${displayOp} ${n2 < 0 ? '('+n2+')' : n2}`;
-
-    gameData.currentQ = { q: qText, a: ans };
-    $('question-display').innerText = `${qText} = ?`;
-}
-
-function inputNumber(num) {
-    const disp = $('answer-display');
-    if (disp.innerText.length < 6) {
-        disp.innerText += num;
-    }
-}
-
-function inputClear() {
-    $('answer-display').innerText = '';
-}
-
-function submitAnswer() {
-    if (!gameData.active) return;
-    const userAns = parseInt($('answer-display').innerText);
-    if (isNaN(userAns)) return;
-
-    if (userAns === gameData.currentQ.a) {
-        const points = gameData.difficulty === 'easy' ? 10 : (gameData.difficulty === 'medium' ? 20 : 30);
-        gameData.score += points;
-        gameData.correct++;
-        $('feedback-msg').innerText = "Benar!";
-        $('feedback-msg').className = "h-6 mt-2 font-bold text-sm text-green-500";
-    } else {
-        gameData.score = Math.max(0, gameData.score - 5);
-        gameData.wrong++;
-        $('feedback-msg').innerText = "Salah!";
-        $('feedback-msg').className = "h-6 mt-2 font-bold text-sm text-red-500";
-    }
-    
-    $('game-score').innerText = gameData.score;
-    $('answer-display').innerText = '';
-    generateQuestion();
-}
-
-function endGame() {
-    clearInterval(gameData.timerInterval);
-    gameData.active = false;
-    
-    stopAudio(); 
-    
-    $('final-score').innerText = gameData.score;
-    $('final-correct').innerText = gameData.correct;
-    $('final-wrong').innerText = gameData.wrong;
-    const achUnlocked = $('achievement-unlocked');
-    if(achUnlocked) achUnlocked.classList.add('hidden');
-
-    showScreen('screen-result');
-
-    if (currentUser && !currentUser.isGuest) {
-        saveGameData();
-    }
-}
-
-async function saveGameData() {
-    if(!db) return; 
-
-    const scoreRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores');
-    const userRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('users').doc(currentUser.id);
-
-    await scoreRef.add({
-        userId: currentUser.id,
-        username: currentUser.username,
-        score: gameData.score,
-        type: gameData.type,
-        difficulty: gameData.difficulty,
-        date: new Date().toISOString()
-    });
-
-    try {
-        const uSnap = await userRef.get();
-        if(uSnap.exists) {
-            const uData = uSnap.data();
-            let newGamesPlayed = (uData.gamesPlayed || 0) + 1;
-            let newHighScore = Math.max((uData.highScore || 0), gameData.score);
-            let currentAchievements = uData.achievements || [];
-
-            let newlyUnlocked = [];
-            achievementsList.forEach(ach => {
-                if (!currentAchievements.includes(ach.id)) {
-                    if (ach.req({ gamesPlayed: newGamesPlayed }, gameData.score)) {
-                        newlyUnlocked.push(ach);
-                        currentAchievements.push(ach.id);
-                    }
-                }
-            });
-
-            await userRef.update({
-                gamesPlayed: newGamesPlayed,
-                highScore: newHighScore,
-                achievements: currentAchievements
-            });
-
-            currentUser.gamesPlayed = newGamesPlayed;
-            currentUser.highScore = newHighScore;
-            currentUser.achievements = currentAchievements;
-
-            if (newlyUnlocked.length > 0) {
-                const ach = newlyUnlocked[0]; 
-                const achText = $('achievement-text');
-                const achBox = $('achievement-unlocked');
-                if(achText) achText.innerText = ach.title;
-                if(achBox) achBox.classList.remove('hidden');
-            }
-        }
-    } catch(e) {
-        console.error("Save error", e);
-    }
-}
-
-async function loadLeaderboard() {
-    const filterType = $('lb-filter-type').value;
-    const filterDiff = $('lb-filter-diff').value;
-    const list = $('leaderboard-list');
-    
-    list.innerHTML = '';
-    const loader = $('lb-loading');
-    if(loader) loader.classList.remove('hidden');
-
-    try {
-        let query = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores');
-        const snapshot = await query.orderBy('date', 'desc').limit(100).get();
-        
-        let scores = [];
-        snapshot.forEach(doc => {
-            scores.push(doc.data());
-        });
-
-        scores = scores.filter(s => {
-            let matchType = filterType === 'all' || s.type === filterType;
-            let matchDiff = filterDiff === 'all' || s.difficulty === filterDiff;
-            return matchType && matchDiff;
-        });
-
-        scores.sort((a, b) => b.score - a.score);
-
-        scores.slice(0, 20).forEach((s, index) => {
-            let medal = '';
-            if (index === 0) medal = '🥇';
-            else if (index === 1) medal = '🥈';
-            else if (index === 2) medal = '🥉';
-            else medal = index + 1;
-
-            const row = `
-                <tr class="border-b bg-white hover:bg-gray-50">
-                    <td class="px-3 py-3 font-bold text-gray-600">${medal}</td>
-                    <td class="px-3 py-3">
-                        <div class="font-bold text-gray-800">${s.username}</div>
-                        <div class="text-xs text-gray-400">${s.type} • ${s.difficulty}</div>
-                    </td>
-                    <td class="px-3 py-3 text-right font-bold text-indigo-600">${s.score}</td>
-                </tr>
-            `;
-            list.innerHTML += row;
-        });
-
-        if(scores.length === 0) {
-            list.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-gray-400">Belum ada data</td></tr>';
-        }
-
-    } catch (e) {
-        console.error(e);
-        list.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-red-400">Gagal memuat</td></tr>';
-    } finally {
-        if(loader) loader.classList.add('hidden');
-    }
-}
-
-function showLeaderboard() {
-    showScreen('screen-leaderboard');
-    loadLeaderboard();
-}
-
-function showProfile() {
-    showScreen('screen-profile');
-    
-    $('profile-username').innerText = currentUser.username;
-    $('profile-joined').innerText = currentUser.isGuest ? 'Tamu' : new Date(currentUser.createdAt).toLocaleDateString('id-ID');
-    $('stat-games').innerText = currentUser.gamesPlayed || 0;
-    $('stat-high').innerText = currentUser.highScore || 0;
-
-    const achList = $('achievement-list');
-    achList.innerHTML = '';
-
-    const myAch = currentUser.achievements || [];
-    
-    achievementsList.forEach(ach => {
-        const unlocked = myAch.includes(ach.id);
-        const item = `
-            <div class="flex items-center p-3 rounded-lg ${unlocked ? 'bg-yellow-50 border border-yellow-200' : 'bg-gray-100 opacity-60'}">
-                <div class="mr-3 text-2xl ${unlocked ? 'text-yellow-500' : 'text-gray-400'}">
-                    <i class="fas fa-medal"></i>
-                </div>
-                <div>
-                    <div class="font-bold ${unlocked ? 'text-gray-800' : 'text-gray-500'}">${ach.title}</div>
-                    <div class="text-xs text-gray-500">${ach.desc}</div>
-                </div>
-                ${unlocked ? '<div class="ml-auto text-green-500"><i class="fas fa-check"></i></div>' : ''}
-            </div>
-        `;
-        achList.innerHTML += item;
-    });
-}
-
-function showAdminPanel() {
-    if (!currentUser || currentUser.role !== 'admin') return;
-    showScreen('screen-admin');
-    loadUserList();
-}
-
-async function loadUserList() {
-    const list = $('admin-user-list');
-    list.innerHTML = '<div class="text-center"><i class="fas fa-spinner fa-spin"></i></div>';
-    
-    try {
-        const userRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('users');
-        const snapshot = await userRef.limit(50).get();
-
-        list.innerHTML = '';
-        snapshot.forEach(doc => {
-            const u = doc.data();
-            if (u.role === 'admin') return; 
-
-            const item = `
-                <div class="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm">
-                    <div>
-                        <div class="font-bold text-gray-800">${u.username}</div>
-                        <div class="text-xs text-gray-500">Pass: ${u.password}</div>
-                    </div>
-                    <button onclick="deleteUser('${doc.id}')" class="bg-red-100 text-red-600 p-2 rounded hover:bg-red-200">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            `;
-            list.innerHTML += item;
-        });
-
-        if (list.innerHTML === '') list.innerHTML = '<p class="text-center text-gray-400">Tidak ada user lain.</p>';
-
-    } catch (e) {
-        list.innerText = "Error loading users.";
-    }
-}
-
-async function deleteUser(uid) {
-    if(!confirm("Hapus user ini? Data tidak bisa kembali.")) return;
-    try {
-        await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('users').doc(uid).delete();
-        loadUserList();
-    } catch(e) {
-        alert("Gagal menghapus: " + e.message);
-    }
-}
-
-// Initial Start with DOM Ready check
-document.addEventListener('DOMContentLoaded', () => {
-    initAuth();
-});
