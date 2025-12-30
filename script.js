@@ -13,7 +13,7 @@ const db = firebase.firestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- AUDIO CONFIGURATION ---
-const bgAudio = document.getElementById('bg-music');
+const bgAudio = document.getElementById('bgmusic.mp3');
 let audioStarted = false;
 
 // --- STATE MANAGEMENT ---
